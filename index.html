@@ -154,7 +154,7 @@
           card.innerHTML = `
             ${avatarHTML}
             <h2>${escHtml(name)}</h2>
-            <p>${escHtml(bio)}</p>
+            <p>${escHtml(bio).replace(/\n/g, '<br>')}</p>
           `;
           grid.appendChild(card);
         });
