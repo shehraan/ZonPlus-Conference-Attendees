@@ -1,12 +1,28 @@
+var CACHE_KEY = "profiles_json";
+var CACHE_TTL = 300; // seconds (5 minutes)
+
 function doGet() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(CACHE_KEY);
+  if (cached) {
+    return ContentService
+      .createTextOutput(cached)
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  const json = buildProfiles();
+  cache.put(CACHE_KEY, json, CACHE_TTL);
+
+  return ContentService
+    .createTextOutput(json)
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function buildProfiles() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
   const data = sheet.getDataRange().getValues();
 
-  if (data.length <= 1) {
-    return ContentService
-      .createTextOutput(JSON.stringify([]))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  if (data.length <= 1) return JSON.stringify([]);
 
   const results = [];
 
@@ -19,29 +35,36 @@ function doGet() {
       imageUrl: ""
     };
 
-    // Convert Google Drive file link → public direct image URL
     const rawUrl = row[4] ? row[4].toString() : "";
     if (rawUrl) {
       const match = rawUrl.match(/\/d\/([^\/]+)/) || rawUrl.match(/id=([^&]+)/);
       if (match) {
-        const fileId = match[1];
-        try {
-          // Make the uploaded file publicly viewable
-          DriveApp.getFileById(fileId).setSharing(
-            DriveApp.Access.ANYONE_WITH_LINK,
-            DriveApp.Permission.VIEW
-          );
-          entry.imageUrl = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w400";
-        } catch (e) {
-          // File may already be shared or inaccessible — skip
-        }
+        entry.imageUrl = "https://drive.google.com/thumbnail?id=" + match[1] + "&sz=w400";
       }
     }
 
     if (entry.name) results.push(entry);
   }
 
-  return ContentService
-    .createTextOutput(JSON.stringify(results))
-    .setMimeType(ContentService.MimeType.JSON);
+  return JSON.stringify(results);
+}
+
+// Attach this to an onFormSubmit trigger to set sharing once at submission time
+function onFormSubmit(e) {
+  const row = e.values;
+  const rawUrl = row[4] ? row[4].toString() : "";
+  if (!rawUrl) return;
+
+  const match = rawUrl.match(/\/d\/([^\/]+)/) || rawUrl.match(/id=([^&]+)/);
+  if (!match) return;
+
+  try {
+    DriveApp.getFileById(match[1]).setSharing(
+      DriveApp.Access.ANYONE_WITH_LINK,
+      DriveApp.Permission.VIEW
+    );
+  } catch (e) {}
+
+  // Bust the cache so the new profile appears within seconds
+  CacheService.getScriptCache().remove(CACHE_KEY);
 }
